@@ -1,7 +1,8 @@
+import Lean
 import Analyzer.Goal
 import Interactive.JsonRpc
-import Lean.Elab.Tactic
-import Lean.Elab.Frontend
+import Interactive.Parse
+import Interactive.Unify
 
 open Lean Core Meta Elab Command Tactic
 
@@ -47,12 +48,12 @@ instance : MonadHandler HandlerM where
     let ts := (← gets sid).tacticState
     ts.restore
     match Parser.runParserCategory (← getEnv) `tactic tactic with
-    | .error e => throw $ Error.mk 0 "Lean parser error" e
+    | .error e => throw <| Error.mk 0 "Lean parser error" e
     | .ok stx =>
       try
         evalTactic stx
       catch e =>
-        throw $ Error.mk 1 "Tactic error" (← e.toMessageData.toString)
+        throw <| Error.mk 1 "Tactic error" (← e.toMessageData.toString)
         ts.restore
       let s ← getThe Core.State
       if s.messages.hasErrors then
@@ -78,6 +79,17 @@ instance : MonadHandler HandlerM where
   resolveName sid name := do
     (← gets sid).tacticState.restore
     return (← resolveGlobalName (.mkSimple name))
+
+  unify sid s₁ s₂ := do
+    (← gets sid).tacticState.restore
+    let (stx₁, stx₂) ← try
+      pure (← parseTerm s₁, ← parseTerm s₂)
+    catch e =>
+      throw <| Error.mk 2 "Parse error" (← e.toMessageData.toString)
+    try
+      unify stx₁ stx₂
+    catch e =>
+      throw <| Error.mk 3 "Elaboration error" (← e.toMessageData.toString)
 
   getPosition := do
     let pos := (← getRef).getPos?

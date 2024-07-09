@@ -138,6 +138,9 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   /-- returns a list of possible interpretations along with field names -/
   resolveName : (sid : Nat) → (name : String) → m (List (Name × List String))
 
+  /-- tries to unify two terms, returning a solution if possible -/
+  unify : (sid : Nat) → (s1 s2 : String) → m (Option (Array (Name × Option String)))
+
   getPosition : m (Option Position)
 
   /-- ends the tactic execution -/
