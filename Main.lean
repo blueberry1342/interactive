@@ -13,7 +13,7 @@ unsafe def runCommand (p : Parsed) : IO UInt32 := do
   let selector := parseSelector p
   let handleSorry := p.hasFlag "sorry"
   if selector.isNone && !handleSorry then
-    IO.eprintln "no selector specified and not handling sorry"
+    IO.eprintln "WARNING: no selector specified and not handling sorry"
     return 0
   let file := FilePath.mk <| p.positionalArg! "file" |>.as! String
   if p.hasFlag "initializer" then
@@ -21,6 +21,8 @@ unsafe def runCommand (p : Parsed) : IO UInt32 := do
   Analyzer.withFile' file do
     runCommandElabM <| onLoad selector handleSorry
     processCommands
+    if !(← matched.get) then
+      IO.eprintln "WARNING: nothing matched"
     let messages := (← get).commandState.messages
     for message in messages.msgs do
       IO.println (← message.toString)
