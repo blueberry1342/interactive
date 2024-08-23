@@ -67,9 +67,7 @@ instance : MonadHandler HandlerM where
   getState sid := do
     (← gets sid).tacticState.restore
     let goals ← getGoals
-    let .some mainGoal := goals.head? | return .none
-    let goal ← Analyzer.Goal.fromMVar mainGoal
-    return .some { mainGoal := goal, numGoals := goals.length }
+    goals.toArray.mapM fun goal => Analyzer.Goal.fromMVar goal
 
   getMessages sid := do
     (← gets sid).tacticState.restore

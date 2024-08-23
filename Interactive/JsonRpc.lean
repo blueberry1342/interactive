@@ -1,5 +1,6 @@
 import Analyzer.Goal
 import Analyzer.Types
+import Analyzer.Output
 import Batteries
 import Lean
 
@@ -39,11 +40,6 @@ def mkError (id : Int) (error : Error) : Response :=
   ⟨ some id, none, some error ⟩
 
 end Response
-
-structure GetStateResult where
-  mainGoal : Analyzer.Goal
-  numGoals : Nat
-deriving ToJson
 
 private def parseError (e : Option String) : Error := ⟨ -32700, "Parse error", e ⟩
 private def invalidRequest (e : Option String) : Error := ⟨ -32600, "Invalid request", e ⟩
@@ -131,7 +127,7 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   runTactic : (sid : Nat) → (tactic : String) → m Nat
 
   /-- returns pretty-printed main goal and number of goals of the given state id -/
-  getState : (sid : Nat) → m (Option GetStateResult)
+  getState : (sid : Nat) → m (Array Analyzer.Goal)
 
   getMessages : (sid : Nat) → m (Array SerialMessage)
 
