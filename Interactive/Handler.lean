@@ -48,6 +48,16 @@ def runHandlerM {α : Type _} (handler : HandlerM α) (s : State) : TacticM α :
   | .ok r => return r
   | .error e => throwNestedTacticEx `Interactive <| .error (← getRef) (.ofFormat (.text e.message))
 
+def saveAsNewNode (parent : Nat) (tactic : String) : HandlerM Nat := do
+  pruneSolvedGoals
+  let i := (← get).nodes.size
+  push {
+    tacticState := ← Tactic.saveState,
+    parent,
+    tactic,
+  }
+  return i
+
 instance : MonadHandler HandlerM where
   runTactic sid tactic := do
     let ts := (← gets sid).tacticState
@@ -64,10 +74,8 @@ instance : MonadHandler HandlerM where
       if s.messages.hasErrors then
         let ms ← liftM $ s.messages.toList.mapM Message.toString
         throw <| Error.mk 1 "Tactic error" <| some <| toJson ms
-      pruneSolvedGoals
-      let i := (← get).nodes.size
-      push { tacticState := ← Tactic.saveState, parent := sid, tactic }
-      return i
+    saveAsNewNode sid tactic
+
 
   getState sid := do
     (← gets sid).tacticState.restore
@@ -99,7 +107,11 @@ instance : MonadHandler HandlerM where
     let fileMap ← getFileMap
     return pos.map fileMap.toPosition
 
-  giveUp := throw <| Error.mk 0 "unimplemented" none
+  giveUp sid := do
+    (← gets sid).tacticState.restore
+    for goal in ← getGoals do
+      goal.admit
+    saveAsNewNode sid ""
 
   commit sid := do
     (← gets sid).tacticState.restore

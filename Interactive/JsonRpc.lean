@@ -140,7 +140,7 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   getPosition : m (Option Position)
 
   /-- admit all goals -/
-  giveUp : m Unit
+  giveUp : (sid : Nat) → m Nat
 
   /-- ends the tactic execution -/
   commit : (sid : Nat) → m Unit
