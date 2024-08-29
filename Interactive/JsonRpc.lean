@@ -41,9 +41,9 @@ def mkError (id : Int) (error : Error) : Response :=
 
 end Response
 
-private def parseError (e : Option String) : Error := ⟨ -32700, "Parse error", e ⟩
-private def invalidRequest (e : Option String) : Error := ⟨ -32600, "Invalid request", e ⟩
-private def methodNotFound (e : Option String) : Error := ⟨ -32601, "Method not found", e ⟩
+def parseError (e : Option String) : Error := ⟨ -32700, "Parse error", e ⟩
+def invalidRequest (e : Option String) : Error := ⟨ -32600, "Invalid request", e ⟩
+def methodNotFound (e : Option String) : Error := ⟨ -32601, "Method not found", e ⟩
 def invalidParams (e : Option String) : Error := ⟨ -32602, "Invalid params", e ⟩
 
 
@@ -119,51 +119,5 @@ open Elab Command Parser.Term in
     : m Response := do $[$doElems]*)
   elabCommand stx
 | _ => throwUnsupportedSyntax
-
-
-class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] where
-  /-- returns a new state id.
-  this method can be async or lazy, i.e., the new state might not be ready yet -/
-  runTactic : (sid : Nat) → (tactic : String) → m Nat
-
-  /-- returns pretty-printed main goal and number of goals of the given state id -/
-  getState : (sid : Nat) → m (Array Analyzer.Goal)
-
-  getMessages : (sid : Nat) → m (Array SerialMessage)
-
-  /-- returns a list of possible interpretations along with field names -/
-  resolveName : (sid : Nat) → (name : String) → m (List (Name × List String))
-
-  /-- tries to unify two terms, returning a solution if possible -/
-  unify : (sid : Nat) → (s1 s2 : String) → m (Option (Array (Name × Option String)))
-
-  getPosition : m (Option Position)
-
-  /-- admit all goals -/
-  giveUp : (sid : Nat) → m Nat
-
-  /-- ends the tactic execution -/
-  commit : (sid : Nat) → m Unit
-
-register_handler MonadHandler
-
-variable {m : Type _ → Type _} [Monad m] [MonadExceptOf Error m] [MonadHandler m] (req : Request)
-
-protected def handleLine [MonadLift IO m]: m Unit := do
-  let line ← (← IO.getStdin).getLine
-  let response ← match Json.parse line with
-  | .ok json =>
-    match (fromJson? json : Except String Request) with
-    | .ok req =>
-      try
-        handleRequest req
-      catch e =>
-        pure <| Response.mkError req.id e
-    | .error e =>
-      pure ⟨ none, none, some <| invalidRequest e ⟩
-  | .error e =>
-    pure ⟨ none, none, some <| parseError e ⟩
-  IO.println (toJson response).compress
-  (← IO.getStdout).flush
 
 end Interactive.JsonRpc
