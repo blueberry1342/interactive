@@ -9,6 +9,6 @@ open Handler
 
 protected def tactic : Tactic := fun _ => do
   let state ← initialState
-  runHandlerM JsonRpc.loop state
+  runHandlerM Handler.loop state
 
 end Interactive

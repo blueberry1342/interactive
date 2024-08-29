@@ -14,15 +14,17 @@ structure Node where
   parent : Nat
   tactic : String
 
-abbrev State := Array Node
+structure State where
+  nodes : Array Node
+  running : Bool
 
 variable {m : Type _ → Type _} [Monad m] [MonadState State m]
 
 private def push (n : Node) : m Unit :=
-  modify (·.push n )
+  modify fun s => { s with nodes := s.nodes.push n }
 
 private def gets [MonadExceptOf Error m] (sid : Nat) : m Node := do
-  match (← get)[sid]? with
+  match (← get).nodes[sid]? with
   | .some n => return n
   | .none => throw <| invalidParams "sid out of range"
 
@@ -36,7 +38,10 @@ open MonadExceptOf -- for throw
 def initialState : TacticM State := do
   pruneSolvedGoals
   let s ← Tactic.saveState
-  return Array.mkArray1 ⟨ s, 0, "" ⟩
+  return {
+    nodes := Array.mkArray1 ⟨ s, 0, "" ⟩,
+    running := true,
+  }
 
 def runHandlerM {α : Type _} (handler : HandlerM α) (s : State) : TacticM α := do
   match ← (handler.run' s).run with
@@ -60,7 +65,7 @@ instance : MonadHandler HandlerM where
         let ms ← liftM $ s.messages.toList.mapM Message.toString
         throw <| Error.mk 1 "Tactic error" <| some <| toJson ms
       pruneSolvedGoals
-      let i := (← get).size
+      let i := (← get).nodes.size
       push { tacticState := ← Tactic.saveState, parent := sid, tactic }
       return i
 
@@ -93,7 +98,15 @@ instance : MonadHandler HandlerM where
     let pos := (← getRef).getPos?
     let fileMap ← getFileMap
     return pos.map fileMap.toPosition
-  commit _sid := pure ()
-  giveUp := pure ()
+
+  giveUp := throw <| Error.mk 0 "unimplemented" none
+
+  commit sid := do
+    (← gets sid).tacticState.restore
+    modify fun s => { s with running := false }
+
+protected def loop : HandlerM Unit := do
+  while (← get).running do
+    JsonRpc.handleLine
 
 end Interactive.Handler
