@@ -1,4 +1,5 @@
 import Lean
+import Interactive.JsonRpc
 import Interactive.Tactic
 import Interactive.Selector
 
@@ -6,15 +7,14 @@ open Lean Elab Command Tactic
 
 syntax "interactive" : tactic
 
-initialize matched : IO.Ref Bool ← IO.mkRef false
+initialize selectorsRef : IO.Ref (Array Selector) ← IO.mkRef #[]
 
-def handleDeclaration (selector : Selector) (stx : Syntax) : CommandElabM Unit := do
+def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
   let modifiers ← elabModifiers stx[0]
   let decl := stx[1]
   if isDefLike decl then
     let defView ← mkDefView modifiers decl
-    if selector.match stx defView then
-      matched.set true
+    if (← selectorsRef.get).any <| fun s => s.match stx defView then
       let node ← `(by interactive)
       let defView := { defView with value := defView.value.setArg 1 node }
       runTermElabM fun vars => Term.elabMutualDef vars #[defView]
@@ -22,7 +22,7 @@ def handleDeclaration (selector : Selector) (stx : Syntax) : CommandElabM Unit :
 
   throwUnsupportedSyntax
 
-def onLoad (selector : Option Selector) (handleSorry : Bool := false) : CommandElabM Unit := do
+def onLoad (handleSorry : Bool := false) : CommandElabM Unit := do
   let cmd ← `(syntax "interactive" : $(mkIdent `tactic))
   elabCommand cmd
   if handleSorry then
@@ -33,9 +33,43 @@ def onLoad (selector : Option Selector) (handleSorry : Bool := false) : CommandE
     declName := ``Interactive.tactic,
     value := Interactive.tactic,
   }
-  if let some selector := selector then
-    modifyEnv fun env => commandElabAttribute.ext.addEntry env {
-      key := ``Parser.Command.declaration,
-      declName := ``handleDeclaration,
-      value := handleDeclaration selector,
-    }
+  modifyEnv fun env => commandElabAttribute.ext.addEntry env {
+    key := ``Parser.Command.declaration,
+    declName := ``handleDeclaration,
+    value := handleDeclaration,
+  }
+
+open System Parser in
+def loadFileIgnoreHeader (path : FilePath) : IO (InputContext × ModuleParserState) := do
+  let input ← IO.FS.readFile path
+  let inputCtx := mkInputContext input path.toString
+  let (_, parserState, _) ← parseHeader inputCtx
+  return (inputCtx, parserState)
+
+namespace Main
+
+protected def loop : Frontend.FrontendM Unit := do
+  while true do
+    let line ← (← IO.getStdin).getLine
+    let request := show Except _ _ from do
+      let request ← Json.parse line
+      let filename ← (← request.getObjVal? "filename").getStr?
+      let filename := System.FilePath.mk filename
+      let selectors ← (← request.getObjVal? "selectors").getArr?
+      let selectors ← selectors.mapM fun s =>
+        (Selector.byPos ∘ .mk) <$> s.getNat? <|> (Selector.byId ∘ .mkSimple) <$> s.getStr?
+      pure (filename, selectors)
+
+    if let .ok (filename, selectors) := request then
+      selectorsRef.set selectors
+      let (context, state) ← Frontend.runCommandElabM <| loadFileIgnoreHeader filename
+      let state ← IO.processCommands context state (← get).commandState
+      let messages := state.commandState.messages
+      -- for message in messages.msgs do
+        -- IO.eprintln (← message.toString)
+      IO.println "{}"
+      (← IO.getStdout).flush
+    else
+      break
+
+end Main
