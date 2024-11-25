@@ -75,18 +75,18 @@ def addStruct (name : Name) (fields : Array (Name × Expr)) : CoreM Unit := do
     mkProjections env name (structureDescr.fields.toList.map (·.projFn)) false
   setEnv env
 
-syntax (name := register_handler) "register_handler" ident : command
+syntax (name := register_handler) "register_handler" ident ident : command
 
 set_option hygiene false in
 open Elab Command Parser.Term in
 @[command_elab «register_handler»] def elabRegisterHandler : CommandElab
-| `(register_handler $handler:ident) => do
-  let (handler, _) := (← resolveGlobalName handler.getId)[0]!
-  let names := getStructureFieldsFlattened (← getEnv) handler false
+| `(register_handler $handlerClass:ident $handler:ident) => do
+  let (handlerClass, _) := (← resolveGlobalName handlerClass.getId)[0]!
+  let names := getStructureFieldsFlattened (← getEnv) handlerClass false
   let mut doElems := #[]
   for name in names do
-    let (params, result) ← liftCoreM $ getParamsAndResult handler name
-    let fnName := mkIdent (handler ++ name)
+    let (params, result) ← liftCoreM $ getParamsAndResult handlerClass name
+    let fnName := mkIdent (handlerClass ++ name)
     let paramNames := params.map (fun p => mkIdent (`params ++ p.1))
     let paramStructure : Ident := mkIdent <| .mkSimple (firstLetterCaptial name.toString ++ "Params")
     let structureName := mkPrivateName (← getEnv) ((← expandDeclId paramStructure {}).declName)
@@ -114,7 +114,7 @@ open Elab Command Parser.Term in
     if params.size > 0 then registerParamStructure
     doElems := doElems.push (← handleRequestForMethod)
   doElems := doElems.push (← `(doSeqItem | return .mkError req.id <| methodNotFound req.method))
-  let stx ← `(private def handleRequest
+  let stx ← `(def $(handler)
     {m : Type _ → Type _} [Monad m] [MonadExceptOf Error m] [MonadHandler m] (req : Request)
     : m Response := do $[$doElems]*)
   elabCommand stx

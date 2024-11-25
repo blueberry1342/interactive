@@ -34,7 +34,7 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   /-- ends the tactic execution -/
   commit : (sid : Nat) → m Unit
 
-register_handler MonadHandler
+register_handler MonadHandler handleRequest
 
 variable {m : Type _ → Type _} [Monad m] [MonadExceptOf Error m] [MonadHandler m] (req : Request)
 
