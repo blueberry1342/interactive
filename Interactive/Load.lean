@@ -16,8 +16,9 @@ def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
     let defView ← mkDefView modifiers decl
     if (← selectorsRef.get).any <| fun s => s.match stx defView then
       let node ← `(by interactive)
+      let scope ← getScope
       let defView := { defView with value := defView.value.setArg 1 node }
-      runTermElabM fun vars => Term.elabMutualDef vars #[defView]
+      runTermElabM fun vars => Term.elabMutualDef vars scope #[defView]
       return
 
   throwUnsupportedSyntax

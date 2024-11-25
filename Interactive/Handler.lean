@@ -132,7 +132,7 @@ instance : MonadHandler HandlerM where
   getMessages sid := do
     (← gets sid).tacticState.restore
     let messages ← getMessageLog
-    messages.msgs.toArray.mapM fun m => m.serialize
+    messages.toArray.mapM fun m => m.serialize
 
   resolveName sid name := do
     (← gets sid).tacticState.restore

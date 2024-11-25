@@ -1,6 +1,6 @@
 import Lean
 import Cli
-import Analyzer.Load
+import Metalib.Load
 import Interactive.Load
 
 open Lean Elab Frontend Cli System
@@ -10,7 +10,7 @@ unsafe def runCommand (p : Parsed) : IO UInt32 := do
   let file := FilePath.mk <| p.positionalArg! "file" |>.as! String
   if p.hasFlag "initializer" then
     enableInitializersExecution
-  Analyzer.withFile' file do
+  discard <| withFile file do
     runCommandElabM <| onLoad handleSorry
     Main.loop
   return 0
