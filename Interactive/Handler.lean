@@ -113,7 +113,8 @@ instance : MonadHandler HandlerM where
     | .error e => throw <| Error.mk 0 "Lean parser error" e
     | .ok stx =>
       try
-        evalTactic stx
+        withOptions (fun opts => opts.insert maxHeartbeats.name (.ofNat 200000)) <|
+          evalTactic stx
       catch e =>
         throw <| Error.mk 1 "Tactic error" (← e.toMessageData.toString)
         ts.restore

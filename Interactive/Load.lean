@@ -24,6 +24,8 @@ def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
   throwUnsupportedSyntax
 
 def onLoad (handleSorry : Bool := false) : CommandElabM Unit := do
+  let cmd ← `(set_option maxHeartbeats 0)
+  elabCommand cmd
   let cmd ← `(syntax "interactive" : $(mkIdent `tactic))
   elabCommand cmd
   if handleSorry then
@@ -57,8 +59,7 @@ protected def loop : Frontend.FrontendM Unit := do
       let filename ← (← request.getObjVal? "filename").getStr?
       let filename := System.FilePath.mk filename
       let selectors ← (← request.getObjVal? "selectors").getArr?
-      let selectors ← selectors.mapM fun s =>
-        (Selector.byPos ∘ .mk) <$> s.getNat? <|> (Selector.byId ∘ .mkSimple) <$> s.getStr?
+      let selectors ← selectors.mapM fun s => fromJson? s
       pure (filename, selectors)
 
     if let .ok (filename, selectors) := request then
