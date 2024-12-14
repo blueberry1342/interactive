@@ -3,7 +3,7 @@ import Interactive.JsonRpc
 import Interactive.Tactic
 import Interactive.Selector
 
-open Lean Elab Command Tactic
+open Lean Elab Frontend Command Tactic
 
 syntax "interactive" : tactic
 
@@ -24,8 +24,6 @@ def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
   throwUnsupportedSyntax
 
 def onLoad (handleSorry : Bool := false) : CommandElabM Unit := do
-  let cmd ← `(set_option maxHeartbeats 0)
-  elabCommand cmd
   let cmd ← `(syntax "interactive" : $(mkIdent `tactic))
   elabCommand cmd
   if handleSorry then
@@ -64,11 +62,15 @@ protected def loop : Frontend.FrontendM Unit := do
 
     if let .ok (filename, selectors) := request then
       selectorsRef.set selectors
-      let (context, state) ← Frontend.runCommandElabM <| loadFileIgnoreHeader filename
-      let state ← IO.processCommands context state (← get).commandState
+      let (context, parserState) ← Frontend.runCommandElabM <| loadFileIgnoreHeader filename
+      let (_, state) ← processCommands { inputCtx := context } |>.run {
+        commandState := (← get).commandState,
+        parserState := parserState,
+        cmdPos := parserState.pos,
+      }
       let messages := state.commandState.messages
-      -- for message in messages.msgs do
-        -- IO.eprintln (← message.toString)
+      -- for message in messages.toArray do
+      --   IO.eprintln (← message.toString)
       IO.println "{}"
       (← IO.getStdout).flush
     else

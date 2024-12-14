@@ -1,7 +1,7 @@
 import Lean
+import Metalib.Parse
 import Analyzer.Goal
 import Interactive.JsonRpc
-import Interactive.Parse
 import Interactive.Unify
 
 open Lean Core Meta Elab Command Tactic
@@ -9,6 +9,15 @@ open Lean Core Meta Elab Command Tactic
 namespace Interactive.Handler
 open JsonRpc
 
+structure ProofVariable where
+  name : Name
+  type : String
+deriving FromJson
+
+structure ProofState where
+  context : Array ProofVariable
+  type : String
+deriving FromJson
 
 class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] where
   /-- returns a new state id.
@@ -25,6 +34,9 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
 
   /-- tries to unify two terms, returning a solution if possible -/
   unify : (sid : Nat) → (s1 s2 : String) → m (Option (Array (Name × Option String)))
+
+  /-- creates a new state from user input -/
+  newState : (state : ProofState) → m Nat
 
   getPosition : m (Option Position)
 
@@ -149,6 +161,11 @@ instance : MonadHandler HandlerM where
       unify stx₁ stx₂
     catch e =>
       throw <| Error.mk 3 "Elaboration error" (← e.toMessageData.toString)
+
+  newState s := withLCtx .empty #[] do
+    let goal ← parseGoal (s.context.map fun v => (v.name, v.type)) .anonymous s.type
+    setGoals [goal]
+    saveAsNewNode 0 ""
 
   getPosition := do
     let pos := (← getRef).getPos?
