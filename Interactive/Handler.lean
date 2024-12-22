@@ -117,6 +117,9 @@ def saveAsNewNode (parent : Nat) (tactic : String) : HandlerM Nat := do
   }
   return i
 
+def withHeartbeats {α : Type _} [Monad m] [MonadWithReaderOf Core.Context m] (heartbeats : Nat) : m α → m α :=
+  withReader (fun s => { s with maxHeartbeats := heartbeats })
+
 instance : MonadHandler HandlerM where
   runTactic sid tactic := do
     let ts := (← gets sid).tacticState
@@ -125,8 +128,7 @@ instance : MonadHandler HandlerM where
     | .error e => throw <| Error.mk 0 "Lean parser error" e
     | .ok stx =>
       try
-        withOptions (fun opts => opts.insert maxHeartbeats.name (.ofNat 200000)) <|
-          evalTactic stx
+        withHeartbeats 200000 <| evalTactic stx
       catch e =>
         throw <| Error.mk 1 "Tactic error" (← e.toMessageData.toString)
         ts.restore
