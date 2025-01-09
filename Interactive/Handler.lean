@@ -128,7 +128,7 @@ instance : MonadHandler HandlerM where
     | .error e => throw <| Error.mk 0 "Lean parser error" e
     | .ok stx =>
       try
-        withHeartbeats 200000 <| evalTactic stx
+        withHeartbeats 200000000 <| evalTactic stx
       catch e =>
         throw <| Error.mk 1 "Tactic error" (← e.toMessageData.toString)
         ts.restore
@@ -137,7 +137,6 @@ instance : MonadHandler HandlerM where
         let ms ← liftM $ s.messages.toList.mapM Message.toString
         throw <| Error.mk 1 "Tactic error" <| some <| toJson ms
     saveAsNewNode sid tactic
-
 
   getState sid := do
     (← gets sid).tacticState.restore

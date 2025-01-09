@@ -63,14 +63,11 @@ protected def loop : Frontend.FrontendM Unit := do
     if let .ok (filename, selectors) := request then
       selectorsRef.set selectors
       let (context, parserState) ← Frontend.runCommandElabM <| loadFileIgnoreHeader filename
-      let (_, state) ← processCommands { inputCtx := context } |>.run {
+      discard <| processCommands { inputCtx := context } |>.run {
         commandState := (← get).commandState,
         parserState := parserState,
         cmdPos := parserState.pos,
       }
-      let messages := state.commandState.messages
-      -- for message in messages.toArray do
-      --   IO.eprintln (← message.toString)
       IO.println "{}"
       (← IO.getStdout).flush
     else

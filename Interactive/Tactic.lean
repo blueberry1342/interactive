@@ -12,7 +12,6 @@ protected def tactic : Tactic := fun _ => do
   IO.println <| json%{ declName: $(declName) }.compress
   (← IO.getStdout).flush
   let state ← initialState
-  withOptions (fun opts => opts.insert maxHeartbeats.name (.ofNat 0)) <|
-    runHandlerM Handler.loop state
+  runHandlerM Handler.loop state
 
 end Interactive
