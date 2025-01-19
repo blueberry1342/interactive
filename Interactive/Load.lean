@@ -24,6 +24,8 @@ def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
   throwUnsupportedSyntax
 
 def onLoad (handleSorry : Bool := false) : CommandElabM Unit := do
+  let cmd ← `(set_option maxHeartbeats 0)
+  elabCommand cmd
   let cmd ← `(syntax "interactive" : $(mkIdent `tactic))
   elabCommand cmd
   if handleSorry then
