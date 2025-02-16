@@ -22,7 +22,7 @@ deriving FromJson
 class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] where
   /-- returns a new state id.
   this method can be async or lazy, i.e., the new state might not be ready yet -/
-  runTactic : (sid : Nat) → (tactic : String) → m Nat
+  runTactic : (sid : Nat) → (tactic : String) → (heartbeats : Nat) → m Nat
 
   /-- returns pretty-printed main goal and number of goals of the given state id -/
   getState : (sid : Nat) → m (Array Analyzer.Goal)
@@ -121,17 +121,22 @@ def withHeartbeats {α : Type _} [Monad m] [MonadWithReaderOf Core.Context m] (h
   withReader (fun s => { s with maxHeartbeats := heartbeats })
 
 instance : MonadHandler HandlerM where
-  runTactic sid tactic := do
+  runTactic sid tactic heartbeats := do
     let ts := (← gets sid).tacticState
     ts.restore
     match Parser.runParserCategory (← getEnv) `tactic tactic with
     | .error e => throw <| Error.mk 0 "Lean parser error" e
     | .ok stx =>
-      try
-        withHeartbeats 200000000 <| evalTactic stx
-      catch e =>
-        throw <| Error.mk 1 "Tactic error" (← e.toMessageData.toString)
+
+      let handler (e : Exception) : TacticM (Except Error Unit) := do
         ts.restore
+        return .error <| .mk 1 "Tactic error" (← e.toMessageData.toString)
+      ExceptT.mk <| tryCatchRuntimeEx (handler := handler) <|
+        MonadExcept.tryCatch (do
+          withHeartbeats heartbeats <| evalTactic stx
+          return .ok ()
+        ) handler
+
       let s ← getThe Core.State
       if s.messages.hasErrors then
         let ms ← liftM $ s.messages.toList.mapM Message.toString
