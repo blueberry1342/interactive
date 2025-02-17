@@ -14,7 +14,7 @@ structure ProofVariable where
   type : String
 deriving FromJson
 
-structure ProofState where
+structure ProofGoal where
   context : Array ProofVariable
   type : String
 deriving FromJson
@@ -36,7 +36,7 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   unify : (sid : Nat) → (s1 s2 : String) → m (Option (Array (Name × Option String)))
 
   /-- creates a new state from user input -/
-  newState : (state : ProofState) → m Nat
+  newState : (state : List ProofGoal) → m Nat
 
   getPosition : m (Option Position)
 
@@ -168,9 +168,9 @@ instance : MonadHandler HandlerM where
     catch e =>
       throw <| Error.mk 3 "Elaboration error" (← e.toMessageData.toString)
 
-  newState s := withLCtx .empty #[] do
-    let goal ← parseGoal (s.context.map fun v => (v.name, v.type)) .anonymous s.type
-    setGoals [goal]
+  newState goals := withLCtx .empty #[] do
+    let gs ← goals.mapM fun g => parseGoal (g.context.map fun v => (v.name, v.type)) .anonymous g.type
+    setGoals gs
     saveAsNewNode 0 ""
 
   getPosition := do
