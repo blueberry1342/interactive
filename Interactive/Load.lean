@@ -10,7 +10,7 @@ syntax "interactive" : tactic
 initialize selectorsRef : IO.Ref (Array Selector) ← IO.mkRef #[]
 
 def handleDeclaration (stx : Syntax) : CommandElabM Unit := do
-  let modifiers ← elabModifiers stx[0]
+  let modifiers ← elabModifiers ⟨ stx[0] ⟩
   let decl := stx[1]
   if isDefLike decl then
     let defView ← mkDefView modifiers decl

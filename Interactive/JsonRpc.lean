@@ -89,7 +89,7 @@ open Elab Command Parser.Term in
     let fnName := mkIdent (handlerClass ++ name)
     let paramNames := params.map (fun p => mkIdent (`params ++ p.1))
     let paramStructure : Ident := mkIdent <| .mkSimple (firstLetterCaptial name.toString ++ "Params")
-    let structureName := mkPrivateName (← getEnv) ((← expandDeclId paramStructure {}).declName)
+    let structureName := mkPrivateName (← getEnv) ((← expandDeclId .anonymous [] paramStructure {}).declName)
     let registerParamStructure := do
       liftCoreM $ addStruct structureName params
       elabCommand (← `(deriving instance FromJson for $(mkIdent structureName)))
