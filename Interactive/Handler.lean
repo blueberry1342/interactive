@@ -19,6 +19,10 @@ structure ProofGoal where
   type : String
 deriving FromJson
 
+structure CommitInfo where
+  correctness: Option String := none
+deriving ToJson
+
 class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] where
   /-- returns a new state id.
   this method can be async or lazy, i.e., the new state might not be ready yet -/
@@ -44,7 +48,7 @@ class MonadHandler (m : Type _ → Type _) [Monad m] [MonadExceptOf Error m] whe
   giveUp : (sid : Nat) → m Nat
 
   /-- ends the tactic execution -/
-  commit : (sid : Nat) → m Unit
+  commit : (sid : Nat) → m CommitInfo
 
 register_handler MonadHandler handleRequest
 
@@ -120,6 +124,60 @@ def saveAsNewNode (parent : Nat) (tactic : String) : HandlerM Nat := do
 def withHeartbeats {α : Type _} [Monad m] [MonadWithReaderOf Core.Context m] (heartbeats : Nat) : m α → m α :=
   withReader (fun s => { s with maxHeartbeats := heartbeats })
 
+def collectFVarsAux : Expr → NameSet
+  | .fvar fvarId => NameSet.empty.insert fvarId.name
+  | .app fm arg => (collectFVarsAux fm).union $ collectFVarsAux arg
+  | .lam _ binderType body _ => (collectFVarsAux binderType).union $ collectFVarsAux body
+  | .forallE _ binderType body _ => (collectFVarsAux binderType).union $ collectFVarsAux body
+  | .letE _ type value body _ => ((collectFVarsAux type).union $ collectFVarsAux value).union $ collectFVarsAux body
+  | .mdata _ expr => collectFVarsAux expr
+  | .proj _ _ struct => collectFVarsAux struct
+  | _ => NameSet.empty
+
+def collectFVars (e : Expr) : MetaM (Array Expr) := do
+  let names := collectFVarsAux e
+  let mut fvars := #[]
+  for ldecl in ← getLCtx do
+    if ldecl.isImplementationDetail then
+      continue
+    if names.contains ldecl.fvarId.name then
+      fvars := fvars.push $ .fvar ldecl.fvarId
+  return fvars
+
+def abstractAllLambdaFVars (e : Expr) : MetaM Expr := do
+  let mut e' := e
+  while e'.hasFVar do
+    let fvars ← collectFVars e'
+    if fvars.isEmpty then
+      break
+    e' ← mkLambdaFVars fvars e'
+  return e'
+
+private def collectFromLevel : Level → NameSet
+| Level.zero => NameSet.empty
+| Level.succ l => collectFromLevel l
+| Level.param n => NameSet.empty.insert n
+| Level.max l1 l2 => (collectFromLevel l1).union $ collectFromLevel l2
+| Level.imax l1 l2 => (collectFromLevel l1).union $ collectFromLevel l2
+| Level.mvar _ => NameSet.empty
+
+private def levels2Names : List Level → NameSet
+  | [] => NameSet.empty
+  | Level.param n :: us => (levels2Names us).insert n
+  | _ :: us => levels2Names us
+
+def collectLevelParams : Expr → NameSet
+  | .sort u => collectFromLevel u
+  | .const _ us => levels2Names us
+  | .app fm arg => (collectLevelParams fm).union $ collectLevelParams arg
+  | .lam _ binderType body _ => (collectLevelParams binderType).union $ collectLevelParams body
+  | .forallE _ binderType body _ => (collectLevelParams binderType).union $ collectLevelParams body
+  | .letE _ type value body _ => ((collectLevelParams type).union $ collectLevelParams value).union $ collectLevelParams body
+  | .mdata _ expr => collectLevelParams expr
+  | .proj _ _ struct => collectLevelParams struct
+  | _ => NameSet.empty
+
+
 instance : MonadHandler HandlerM where
   runTactic sid tactic heartbeats := do
     let ts := (← gets sid).tacticState
@@ -185,8 +243,66 @@ instance : MonadHandler HandlerM where
     saveAsNewNode sid ""
 
   commit sid := do
-    (← gets sid).tacticState.restore
-    modify fun s => { s with running := false }
+    match (← get).nodes[sid]? with
+    | none => throwError s!"State {sid} not found"
+    | some node =>
+      let ts := node.tacticState
+      match (← get).nodes[0]? with
+      | none => throwError "Initial state not found"
+      | some node0 =>
+        let ts0 := node0.tacticState
+
+        -- Go to the initial state and grab the goal's metavariable ID.
+        ts0.restore
+        let [goalId] ← getGoals | throwError "[fatal] More than one initial goal"
+        let tgt ← getMainTarget >>= instantiateMVars
+        let tgt_fmt ← ppExpr tgt
+
+        -- Check its assigned Expr in the current state.
+        ts.restore
+        let some pf ← getExprMVarAssignment? goalId | throwError "[fatal] goal not assigned"
+        let pf ← instantiateMVars pf
+        let pft ← inferType pf >>= instantiateMVars
+        let pft_fmt ← ppExpr pft
+
+        if ! (← withTransparency .all (isExprDefEq tgt pft)) then
+          (← gets sid).tacticState.restore
+          modify fun s => { s with running := false }
+          return {correctness := s!"Proof type mismatch: {tgt_fmt} != {pft_fmt}"}
+
+        ts0.restore
+        let pf ← goalId.withContext $ abstractAllLambdaFVars pf
+        let pft ← inferType pf >>= instantiateMVars
+
+        ts.restore
+        if pf.hasSorry then
+          (← gets sid).tacticState.restore
+          modify fun s => { s with running := false }
+          return {correctness := "Proof contains `sorry`"}
+
+        if pf.hasExprMVar then
+          (← gets sid).tacticState.restore
+          modify fun s => { s with running := false }
+          return {correctness := "Proof contains metavariables"}
+
+        -- Kernel type check.
+        let lvls := (collectLevelParams pf).toList
+        let decl := Declaration.thmDecl {
+            name := Name.anonymous, type := pft, value := pf
+            levelParams := lvls
+        }
+        try
+          let _ ← addDecl decl
+        catch ex =>
+          (← gets sid).tacticState.restore
+          modify fun s => { s with running := false }
+          return {correctness := s!"Kernel type check failed: {← ex.toMessageData.toString}"}
+
+
+        --logInfo "Debug in commit"
+        (← gets sid).tacticState.restore
+        modify fun s => { s with running := false }
+        return {correctness := "Proof type correct"}
 
 protected def loop : HandlerM Unit := do
   while (← get).running do
