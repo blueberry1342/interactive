@@ -20,6 +20,7 @@ structure ProofGoal where
 deriving FromJson
 
 structure CommitInfo where
+  errorcode : Nat
   correctness: Option String := none
 deriving ToJson
 
@@ -268,7 +269,7 @@ instance : MonadHandler HandlerM where
         if ! (← withTransparency .all (isExprDefEq tgt pft)) then
           (← gets sid).tacticState.restore
           modify fun s => { s with running := false }
-          return {correctness := s!"Proof type mismatch: {tgt_fmt} != {pft_fmt}"}
+          return {errorcode := Nat.zero.succ, correctness := s!"Proof type mismatch: {tgt_fmt} != {pft_fmt}"}
 
         ts0.restore
         let pf ← goalId.withContext $ abstractAllLambdaFVars pf
@@ -278,12 +279,12 @@ instance : MonadHandler HandlerM where
         if pf.hasSorry then
           (← gets sid).tacticState.restore
           modify fun s => { s with running := false }
-          return {correctness := "Proof contains `sorry`"}
+          return {errorcode := Nat.zero.succ.succ, correctness := "Proof contains `sorry`"}
 
         if pf.hasExprMVar then
           (← gets sid).tacticState.restore
           modify fun s => { s with running := false }
-          return {correctness := "Proof contains metavariables"}
+          return {errorcode := Nat.zero.succ.succ.succ, correctness := "Proof contains metavariables"}
 
         -- Kernel type check.
         let lvls := (collectLevelParams pf).toList
@@ -296,13 +297,11 @@ instance : MonadHandler HandlerM where
         catch ex =>
           (← gets sid).tacticState.restore
           modify fun s => { s with running := false }
-          return {correctness := s!"Kernel type check failed: {← ex.toMessageData.toString}"}
+          return {errorcode := Nat.zero.succ.succ.succ.succ, correctness := s!"Kernel type check failed: {← ex.toMessageData.toString}"}
 
-
-        --logInfo "Debug in commit"
         (← gets sid).tacticState.restore
         modify fun s => { s with running := false }
-        return {correctness := "Proof type correct"}
+        return {errorcode := Nat.zero, correctness := "Proof type correct"}
 
 protected def loop : HandlerM Unit := do
   while (← get).running do
